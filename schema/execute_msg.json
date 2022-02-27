@@ -5,11 +5,19 @@
     {
       "type": "object",
       "required": [
-        "increment"
+        "make_guess"
       ],
       "properties": {
-        "increment": {
-          "type": "object"
+        "make_guess": {
+          "type": "object",
+          "required": [
+            "word"
+          ],
+          "properties": {
+            "word": {
+              "type": "string"
+            }
+          }
         }
       },
       "additionalProperties": false
@@ -17,18 +25,21 @@
     {
       "type": "object",
       "required": [
-        "reset"
+        "insert_word_in_dictionary"
       ],
       "properties": {
-        "reset": {
+        "insert_word_in_dictionary": {
           "type": "object",
           "required": [
-            "count"
+            "words_list"
           ],
           "properties": {
-            "count": {
-              "type": "integer",
-              "format": "int32"
+            "words_list": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
             }
           }
         }

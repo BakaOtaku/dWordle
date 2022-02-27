@@ -1,14 +1,16 @@
+#[cfg(not(feature = "library"))]
+use cosmwasm_std::entry_point;
+use cosmwasm_std::{
+    to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult,
+};
+use cw2::set_contract_version;
 use std::borrow::BorrowMut;
 use std::collections::HashSet;
 use std::ops::Add;
-#[cfg(not(feature = "library"))]
-use cosmwasm_std::entry_point;
-use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, StdError};
-use cw2::set_contract_version;
 
 use crate::error::ContractError;
-use crate::msg::{ ExecuteMsg, InstantiateMsg, QueryMsg};
-use crate::state::{ADDR_AND_DAY_TO_CHOICE, DEPLOYING_BLOCK_TIMESTAMP,  WORD_DICTIONARY};
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use crate::state::{ADDR_AND_DAY_TO_CHOICE, DEPLOYING_BLOCK_TIMESTAMP, WORD_DICTIONARY};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:{{project-name}}";
@@ -22,7 +24,7 @@ pub fn instantiate(
     _msg: InstantiateMsg,
 ) -> Result<Response, StdError> {
     DEPLOYING_BLOCK_TIMESTAMP.save(deps.storage, &_env.block.time.seconds())?;
-    Ok(Response::default())
+    Ok(Response::default().add_attribute("method","instantiated"))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -49,7 +51,7 @@ pub fn execute_insert_word_dictionary(
     let mut dictionary = WORD_DICTIONARY.load(deps.storage)?.clone();
     dictionary.word_list = dictionary.word_list.union(&words_list).cloned().collect();
     WORD_DICTIONARY.save(deps.storage, &dictionary)?;
-    Ok(Response::new())
+    Ok(Response::new().add_attribute("method","word inserted"))
 }
 
 pub fn update_today_word_and_return(
@@ -70,7 +72,7 @@ pub fn update_today_word_and_return(
             i = i + 1;
         }
         dictionary.day = current_day;
-        WORD_DICTIONARY.save( deps.storage, &dictionary)?;
+        WORD_DICTIONARY.save(deps.storage, &dictionary)?;
     }
     if !dictionary.word_list.contains(word.as_str()) {
         return Err(ContractError::WrongGuess {});
@@ -87,24 +89,28 @@ pub fn execute_make_guess(
     if word.len() != 5 {
         return Err(ContractError::WrongGuess {});
     }
-    let (today_word, current_day) = update_today_word_and_return(deps.borrow_mut(), env, word.clone())?;
+    let (today_word, current_day) =
+        update_today_word_and_return(deps.borrow_mut(), env, word.clone())?;
     let mut choice = "".to_string();
     for (i, ch) in word.chars().enumerate() {
         let pos = today_word.find(ch);
         match pos {
-            None => { choice = choice.clone().add("B"); },
+            None => {
+                choice = choice.clone().add("B");
+            }
             Some(position) => {
                 if position == i {
                     choice = choice.clone().add("G");
                 } else {
                     choice = choice.clone().add("Y");
                 }
-            },
+            }
         }
     }
     let mut user_and_day = current_day.to_string();
     user_and_day.push_str(info.sender.as_str());
-    let mut choice_store = ADDR_AND_DAY_TO_CHOICE.load(deps.storage, user_and_day)?;
+    let mut choice_store = ADDR_AND_DAY_TO_CHOICE.load(deps.storage, user_and_day.clone())?;
     choice_store.push_str(choice.as_str());
-    Ok(Response::new())
+    ADDR_AND_DAY_TO_CHOICE.save(deps.storage, user_and_day, &choice_store);
+    Ok(Response::new().add_attribute("choice",choice.as_str()))
 }
