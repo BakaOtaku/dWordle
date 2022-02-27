@@ -111,6 +111,6 @@ pub fn execute_make_guess(
     user_and_day.push_str(info.sender.as_str());
     let mut choice_store = ADDR_AND_DAY_TO_CHOICE.load(deps.storage, user_and_day.clone())?;
     choice_store.push_str(choice.as_str());
-    ADDR_AND_DAY_TO_CHOICE.save(deps.storage, user_and_day, &choice_store);
+    ADDR_AND_DAY_TO_CHOICE.save(deps.storage, user_and_day, &choice_store)?;
     Ok(Response::new().add_attribute("choice",choice.as_str()))
 }
