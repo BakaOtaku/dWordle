@@ -1,1 +1,1 @@
-de7e89c91201429a54f09ea85c7f458de74732b4b008ce5ffc82b5f5c93379ca  ./target/wasm32-unknown-unknown/release/dwordle.wasm
+8f0df12e61d2a07388dd115df61001f73f7803d96947aaaae2336a8fcc1c20f6  ./target/wasm32-unknown-unknown/release/dwordle.wasm

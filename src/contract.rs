@@ -114,3 +114,22 @@ pub fn execute_make_guess(
     ADDR_AND_DAY_TO_CHOICE.save(deps.storage, user_and_day, &choice_store)?;
     Ok(Response::new().add_attribute("choice",choice.as_str()))
 }
+
+pub fn claim(
+    mut deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    timestamp: u64
+) -> Result<Response, ContractError> {
+    let deploy_time = DEPLOYING_BLOCK_TIMESTAMP.load(deps.storage)?;
+    let day = (timestamp - deploy_time) / 86400;
+    let mut user_and_day = day.to_string();
+    user_and_day.push_str(info.sender.as_str());
+    let mut choice_store = ADDR_AND_DAY_TO_CHOICE.load(deps.storage, user_and_day.clone())?;
+    let choice_len=choice_store.len();
+    let char_vec: Vec<char> = choice_store.chars().collect();
+    if char_vec[choice_len-1] == 'G' && char_vec[choice_len-2] == 'G' && char_vec[(choice_len-3) as usize]  == 'G' && char_vec[(choice_len-4) as usize]  == 'G' && char_vec[(choice_len-5)] == 'G'  {
+        // mint logic here
+    }
+    Ok(Response::new().add_attribute("choice",choice_store.as_str()))
+}
