@@ -5,12 +5,15 @@ use cosmwasm_std::{
 };
 // use cw2::set_contract_version;
 use std::borrow::BorrowMut;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
+use std::hash::{Hash, Hasher};
+use std::iter::FromIterator;
 use std::ops::Add;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
-use crate::state::{ADDR_AND_DAY_TO_CHOICE, DEPLOYING_BLOCK_TIMESTAMP, WORD_DICTIONARY};
+use crate::state::{ADDRESS_AND_DAY_TO_CHOICE, DEPLOYING_BLOCK_TIMESTAMP, WORD_DICTIONARY};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:{{project-name}}";
@@ -42,14 +45,25 @@ pub fn execute(
     }
 }
 
+fn calculate_hash<T: Hash>(t: &T) -> u64 {
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
+}
+
+fn vec_to_set(vec: Vec<String>) -> HashSet<String> {
+    HashSet::from_iter(vec)
+}
+
 pub fn execute_insert_word_dictionary(
     mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    mut words_list: HashSet<String>,
+    words_list: Vec<String>,
 ) -> Result<Response, ContractError> {
     let mut dictionary = WORD_DICTIONARY.load(deps.storage)?.clone();
-    dictionary.word_list = dictionary.word_list.union(&words_list).cloned().collect();
+    dictionary.word_list.extend( words_list.clone());
+    dictionary.word_dictionary.extend(vec_to_set(words_list));
     WORD_DICTIONARY.save(deps.storage, &dictionary)?;
     Ok(Response::new().add_attribute("method","word inserted"))
 }
@@ -57,28 +71,30 @@ pub fn execute_insert_word_dictionary(
 pub fn update_today_word_and_return(
     deps: &mut DepsMut,
     env: Env,
-    word: String,
-) -> Result<(String, u64), ContractError> {
+) -> Result<([String;3], u64, HashSet<String>), ContractError> {
     let mut dictionary = WORD_DICTIONARY.load(deps.storage)?.clone();
     let deploy_time = DEPLOYING_BLOCK_TIMESTAMP.load(deps.storage)?;
     let current_day = (env.block.time.seconds() - deploy_time) / 86400;
     if dictionary.day < current_day {
-        let mut i = 0;
-        for word in dictionary.word_list.iter() {
-            if i == current_day {
-                dictionary.day_word = word.clone();
-                break;
-            }
-            i = i + 1;
-        }
+
+        dictionary.day_words[0] = dictionary.word_list[dictionary.index_word].clone();
+        dictionary.day_words[1] = dictionary.word_list[dictionary.index_word+1].clone();
+        dictionary.day_words[2] = dictionary.word_list[dictionary.index_word+2].clone();
+        dictionary.index_word = dictionary.index_word+3;
+
         dictionary.day = current_day;
         WORD_DICTIONARY.save(deps.storage, &dictionary)?;
     }
-    if !dictionary.word_list.contains(word.as_str()) {
-        return Err(ContractError::WrongGuess {});
-    }
-    return Ok((dictionary.day_word, current_day));
+
+    return Ok((dictionary.day_words, current_day, dictionary.word_dictionary));
 }
+
+#[derive(Hash)]
+struct SenderNDay {
+    day: u64,
+    msg_sender: String,
+}
+
 
 pub fn execute_make_guess(
     mut deps: DepsMut,
@@ -89,11 +105,24 @@ pub fn execute_make_guess(
     if word.len() != 5 {
         return Err(ContractError::WrongGuess {});
     }
-    let (today_word, current_day) =
-        update_today_word_and_return(deps.borrow_mut(), env, word.clone())?;
+
+    // chargeTokenForAttempt
+
+    let (today_word_list, current_day, word_dictionary) =
+        update_today_word_and_return(deps.borrow_mut(), env)?;
+    if word_dictionary.contains(&word) {
+        return Err(ContractError::WrongGuess {});
+    }
+    let sender = info.sender.to_string();
+
+    let calc_hash = SenderNDay{day: current_day,msg_sender: sender};
+
+    let this_users_hash = calculate_hash( &calc_hash) as usize/3;
+    let this_users_word = today_word_list[this_users_hash].clone();
+
     let mut choice = "".to_string();
     for (i, ch) in word.chars().enumerate() {
-        let pos = today_word.find(ch);
+        let pos = this_users_word.find(ch);
         match pos {
             None => {
                 choice = choice.clone().add("B");
@@ -109,9 +138,9 @@ pub fn execute_make_guess(
     }
     let mut user_and_day = current_day.to_string();
     user_and_day.push_str(info.sender.as_str());
-    let mut choice_store = ADDR_AND_DAY_TO_CHOICE.load(deps.storage, user_and_day.clone())?;
+    let mut choice_store = ADDRESS_AND_DAY_TO_CHOICE.load(deps.storage, user_and_day.clone())?;
     choice_store.push_str(choice.as_str());
-    ADDR_AND_DAY_TO_CHOICE.save(deps.storage, user_and_day, &choice_store)?;
+    ADDRESS_AND_DAY_TO_CHOICE.save(deps.storage, user_and_day, &choice_store)?;
     Ok(Response::new().add_attribute("choice",choice.as_str()))
 }
 
@@ -125,7 +154,7 @@ pub fn claim(
     let day = (timestamp - deploy_time) / 86400;
     let mut user_and_day = day.to_string();
     user_and_day.push_str(info.sender.as_str());
-    let mut choice_store = ADDR_AND_DAY_TO_CHOICE.load(deps.storage, user_and_day.clone())?;
+    let mut choice_store = ADDRESS_AND_DAY_TO_CHOICE.load(deps.storage, user_and_day.clone())?;
     let choice_len=choice_store.len();
     let char_vec: Vec<char> = choice_store.chars().collect();
     if char_vec[choice_len-1] == 'G' && char_vec[choice_len-2] == 'G' && char_vec[(choice_len-3) as usize]  == 'G' && char_vec[(choice_len-4) as usize]  == 'G' && char_vec[(choice_len-5)] == 'G'  {

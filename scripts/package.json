@@ -1,0 +1,16 @@
+{
+  "name": "scripts",
+  "version": "1.0.0",
+  "description": "",
+  "main": "snip20setup.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@iov/crypto": "^2.5.0",
+    "@iov/encoding": "^2.5.0",
+    "secretjs": "^0.17.5"
+  }
+}

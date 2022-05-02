@@ -11,7 +11,7 @@ pub struct InstantiateMsg {}
 pub enum ExecuteMsg {
     MakeGuess { word: String },
 
-    InsertWordInDictionary { words_list: HashSet<String> },
+    InsertWordInDictionary { words_list: Vec<String> },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
