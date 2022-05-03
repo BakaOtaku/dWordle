@@ -1,19 +1,20 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{
-    to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult,
-};
+use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult, coin, Uint128, Order};
 // use cw2::set_contract_version;
 use std::borrow::BorrowMut;
+use std::cmp::max_by;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashSet;
+use std::collections::{HashSet};
 use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
-use std::ops::Add;
+use std::ops::{Add, Div};
+use cw_storage_plus::Bound;
+use crate::coin_helpers::assert_sent_sufficient_coin;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
-use crate::state::{ADDRESS_AND_DAY_TO_CHOICE, DEPLOYING_BLOCK_TIMESTAMP, WORD_DICTIONARY};
+use crate::state::{DAY_AND_ADDRESS_TO_BLOCK_WON, ADDRESS_AND_DAY_TO_CHOICE, DAY_AND_BLOCK_TO_DEPOSIT, DAY_AND_BLOCK_TO_WINNER_COUNT, DEPLOYING_BLOCK_TIMESTAMP, WORD_DICTIONARY};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:{{project-name}}";
@@ -70,7 +71,7 @@ pub fn execute_insert_word_dictionary(
 
 pub fn update_today_word_and_return(
     deps: &mut DepsMut,
-    env: Env,
+    env: &Env,
 ) -> Result<([String;3], u64, HashSet<String>), ContractError> {
     let mut dictionary = WORD_DICTIONARY.load(deps.storage)?.clone();
     let deploy_time = DEPLOYING_BLOCK_TIMESTAMP.load(deps.storage)?;
@@ -105,14 +106,17 @@ pub fn execute_make_guess(
     if word.len() != 5 {
         return Err(ContractError::WrongGuess {});
     }
-
+    assert_sent_sufficient_coin(&info.funds, Some(coin(25000, "uscrt")))?;
     // chargeTokenForAttempt
 
+
     let (today_word_list, current_day, word_dictionary) =
-        update_today_word_and_return(deps.borrow_mut(), env)?;
+        update_today_word_and_return(deps.borrow_mut(), &env)?;
     if word_dictionary.contains(&word) {
         return Err(ContractError::WrongGuess {});
     }
+    DAY_AND_BLOCK_TO_DEPOSIT.update(deps.storage, (current_day, env.block.height), |already_deposited: Option<Uint128>| -> StdResult<_> { Ok(already_deposited.unwrap_or_default()+ Uint128::new(25000)) })?;
+
     let sender = info.sender.to_string();
 
     let calc_hash = SenderNDay{day: current_day,msg_sender: sender};
@@ -125,22 +129,25 @@ pub fn execute_make_guess(
         let pos = this_users_word.find(ch);
         match pos {
             None => {
-                choice = choice.clone().add("B");
+                choice = choice.add("B");
             }
             Some(position) => {
                 if position == i {
-                    choice = choice.clone().add("G");
+                    choice = choice.add("G");
                 } else {
-                    choice = choice.clone().add("Y");
+                    choice = choice.add("Y");
                 }
             }
         }
     }
-    let mut user_and_day = current_day.to_string();
-    user_and_day.push_str(info.sender.as_str());
-    let mut choice_store = ADDRESS_AND_DAY_TO_CHOICE.load(deps.storage, user_and_day.clone())?;
+    if check_if_correct(&choice)  {
+        DAY_AND_BLOCK_TO_WINNER_COUNT.update(deps.storage, (current_day, env.block.height ), |already_winner_count: Option<u64>| -> StdResult<_> { Ok(already_winner_count.unwrap_or_default() + 1) })?;
+        DAY_AND_ADDRESS_TO_BLOCK_WON.save(deps.storage, (current_day, &info.sender), &env.block.height)?;
+    }
+
+    let mut choice_store = ADDRESS_AND_DAY_TO_CHOICE.load(deps.storage, (&info.sender, current_day))?;
     choice_store.push_str(choice.as_str());
-    ADDRESS_AND_DAY_TO_CHOICE.save(deps.storage, user_and_day, &choice_store)?;
+    ADDRESS_AND_DAY_TO_CHOICE.save(deps.storage, (&info.sender, current_day), &choice_store)?;
     Ok(Response::new().add_attribute("choice",choice.as_str()))
 }
 
@@ -148,17 +155,43 @@ pub fn claim(
     mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    timestamp: u64
+    day_claim: u64
 ) -> Result<Response, ContractError> {
     let deploy_time = DEPLOYING_BLOCK_TIMESTAMP.load(deps.storage)?;
-    let day = (timestamp - deploy_time) / 86400;
-    let mut user_and_day = day.to_string();
-    user_and_day.push_str(info.sender.as_str());
-    let mut choice_store = ADDRESS_AND_DAY_TO_CHOICE.load(deps.storage, user_and_day.clone())?;
-    let choice_len=choice_store.len();
-    let char_vec: Vec<char> = choice_store.chars().collect();
-    if char_vec[choice_len-1] == 'G' && char_vec[choice_len-2] == 'G' && char_vec[(choice_len-3) as usize]  == 'G' && char_vec[(choice_len-4) as usize]  == 'G' && char_vec[(choice_len-5)] == 'G'  {
-        // mint logic here
+    let current_day = (env.block.time.seconds() - deploy_time) / 86400;
+    if day_claim >= current_day {
+        return Err(ContractError::DayNotEnded {})
     }
-    Ok(Response::new().add_attribute("choice",choice_store.as_str()))
+    let block_won = DAY_AND_ADDRESS_TO_BLOCK_WON.load(deps.storage, (day_claim, &info.sender))?;
+    let blocks_and_deposits: StdResult<Vec<_>> = DAY_AND_BLOCK_TO_DEPOSIT
+        .prefix(current_day)
+        .range(deps.storage, None, None, Order::Ascending)
+        .collect();
+
+    let result_vector = blocks_and_deposits?.clone();
+    let first_block = result_vector.get(0).unwrap().0;
+    let last_block = result_vector.last().unwrap().0;
+    let mut total_reward = Uint128::from(0u128);
+    let mut divisor = 1;
+    for ele in result_vector {
+        if ele.0 < block_won {
+            continue;
+        }
+        divisor = DAY_AND_BLOCK_TO_WINNER_COUNT.load(deps.storage,(day_claim, ele.0)).unwrap_or(divisor);
+        total_reward =  total_reward + ele.1 / Uint128::from(divisor);
+    }
+
+    // transfer funds here
+    Ok(Response::new())
+}
+
+pub fn check_if_correct(
+    word_to_check: &String
+) -> bool{
+    let choice_len= word_to_check.len();
+    let char_vec: Vec<char> = word_to_check.chars().collect();
+    if char_vec[choice_len-1] == 'G' && char_vec[choice_len-2] == 'G' && char_vec[(choice_len-3)]  == 'G' && char_vec[(choice_len-4)]  == 'G' && char_vec[(choice_len-5)] == 'G'  {
+        return true;
+    }
+    false
 }

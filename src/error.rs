@@ -12,12 +12,10 @@ pub enum ContractError {
     #[error("Insufficient funds sent")]
     InsufficientFundsSend {},
 
+    #[error("Day not ended")]
+    DayNotEnded {},
+
     #[error("Wrong guess")]
     WrongGuess {},
 
-    #[error("Auction Ended")]
-    AuctionEnded {},
-
-    #[error("Auction Not Ended Yet")]
-    AuctionNotEnded {},
 }
