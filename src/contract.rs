@@ -1,33 +1,28 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult, coin, Uint128, Order, BankMsg, Addr};
+use cosmwasm_std::{DepsMut, Env, MessageInfo, Response, StdError, StdResult, coin, Uint128, Order, BankMsg, Binary, Deps, to_binary};
 use std::borrow::BorrowMut;
-use std::cmp::max_by;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashSet};
 use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
-use std::ops::{Add, Div};
-use cw_storage_plus::Bound;
+use std::ops::{Add};
 use crate::coin_helpers::assert_sent_sufficient_coin;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
-use crate::state::{DAY_AND_ADDRESS_TO_BLOCK_WON, ADDRESS_AND_DAY_TO_CHOICE, DAY_AND_BLOCK_TO_DEPOSIT, DAY_AND_BLOCK_TO_WINNER_COUNT, DEPLOYING_BLOCK_TIMESTAMP, WORD_DICTIONARY};
-
-// version info for migration info
-const CONTRACT_NAME: &str = "crates.io:{{project-name}}";
-const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+use crate::state::{DAY_AND_ADDRESS_TO_BLOCK_WON, ADDRESS_AND_DAY_TO_CHOICE, DAY_AND_BLOCK_TO_DEPOSIT, DAY_AND_BLOCK_TO_WINNER_COUNT, DEPLOYING_BLOCK_TIMESTAMP, WORD_DICTIONARY, OWNER};
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
-    _env: Env,
-    _info: MessageInfo,
+    env: Env,
+    info: MessageInfo,
     _msg: InstantiateMsg,
 ) -> Result<Response, StdError> {
-    DEPLOYING_BLOCK_TIMESTAMP.save(deps.storage, &_env.block.time.seconds())?;
-    Ok(Response::default().add_attribute("method","instantiated"))
+    DEPLOYING_BLOCK_TIMESTAMP.save(deps.storage, &env.block.time.seconds())?;
+    OWNER.save(deps.storage,&info.sender)?;
+    Ok(Response::default().add_attribute("owner",info.sender.to_string()))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -41,8 +36,37 @@ pub fn execute(
         ExecuteMsg::MakeGuess { word } => execute_make_guess(deps, env, info, word),
         ExecuteMsg::InsertWordInDictionary { words_list } => {
             execute_insert_word_dictionary(deps, env, info, words_list)
+        },
+        ExecuteMsg::ClaimReward { day } => {
+            claim(deps, env, info, day)
         }
     }
+}
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
+    match msg {
+        QueryMsg::DayQueryDeposit {day}  => query_day_data(deps, day),
+        QueryMsg::DayQueryWinnerCount {day}  => query_day_winner(deps, day),
+    }
+}
+
+fn query_day_winner(deps: Deps, day: u64) -> StdResult<Binary> {
+    let blocks_and_deposits: StdResult<Vec<_>> = DAY_AND_BLOCK_TO_WINNER_COUNT
+        .prefix(day)
+        .range(deps.storage, None, None, Order::Ascending)
+        .collect();
+    let result_vector = blocks_and_deposits?.clone();
+    to_binary(&result_vector)
+}
+
+fn query_day_data(deps: Deps, day: u64) -> StdResult<Binary> {
+    let blocks_and_deposits: StdResult<Vec<_>> = DAY_AND_BLOCK_TO_DEPOSIT
+        .prefix(day)
+        .range(deps.storage, None, None, Order::Ascending)
+        .collect();
+    let result_vector = blocks_and_deposits?.clone();
+    to_binary(&result_vector)
 }
 
 fn calculate_hash<T: Hash>(t: &T) -> u64 {
@@ -57,11 +81,15 @@ fn vec_to_set(vec: Vec<String>) -> HashSet<String> {
 
 pub fn execute_insert_word_dictionary(
     mut deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     words_list: Vec<String>,
 ) -> Result<Response, ContractError> {
-    let mut dictionary = WORD_DICTIONARY.load(deps.storage)?.clone();
+    let owner = OWNER.load(deps.storage)?;
+    if !info.sender.to_string().eq(&owner.to_string()) {
+        return Err(ContractError::Unauthorized {})
+    }
+    let mut dictionary = WORD_DICTIONARY.load(deps.storage).unwrap_or_default().clone();
     dictionary.word_list.extend( words_list.clone());
     dictionary.word_dictionary.extend(vec_to_set(words_list));
     WORD_DICTIONARY.save(deps.storage, &dictionary)?;
@@ -75,16 +103,17 @@ pub fn update_today_word_and_return(
     let mut dictionary = WORD_DICTIONARY.load(deps.storage)?.clone();
     let deploy_time = DEPLOYING_BLOCK_TIMESTAMP.load(deps.storage)?;
     let current_day = (env.block.time.seconds() - deploy_time) / 86400;
-    if dictionary.day < current_day {
+    if dictionary.day < current_day + 1 {
 
         dictionary.day_words[0] = dictionary.word_list[dictionary.index_word].clone();
         dictionary.day_words[1] = dictionary.word_list[dictionary.index_word+1].clone();
         dictionary.day_words[2] = dictionary.word_list[dictionary.index_word+2].clone();
         dictionary.index_word = dictionary.index_word+3;
 
-        dictionary.day = current_day;
+        dictionary.day = current_day + 1;
         WORD_DICTIONARY.save(deps.storage, &dictionary)?;
-        DAY_AND_ADDRESS_TO_BLOCK_WON.save(deps.storage, (current_day, &deps.api.addr_validate("secret1hg7lzjrmfaljqedgau87apzdj5ms4kfma4fwyy")?), &env.block.height)?;
+        let owner = OWNER.load(deps.storage)?;
+        DAY_AND_ADDRESS_TO_BLOCK_WON.save(deps.storage, (current_day, &owner), &env.block.height)?;
     }
 
     return Ok((dictionary.day_words, current_day, dictionary.word_dictionary));
@@ -112,8 +141,12 @@ pub fn execute_make_guess(
 
     let (today_word_list, current_day, word_dictionary) =
         update_today_word_and_return(deps.borrow_mut(), &env)?;
-    if word_dictionary.contains(&word) {
+    if !word_dictionary.contains(&word) {
         return Err(ContractError::WrongGuess {});
+    }
+    let mut choice_store = ADDRESS_AND_DAY_TO_CHOICE.load(deps.storage, (&info.sender, current_day)).unwrap_or_default();
+    if choice_store.len() >= 30 {
+        return Err(ContractError::GameOver {});
     }
     DAY_AND_BLOCK_TO_DEPOSIT.update(deps.storage, (current_day, env.block.height), |already_deposited: Option<Uint128>| -> StdResult<_> { Ok(already_deposited.unwrap_or_default()+ Uint128::new(25000)) })?;
 
@@ -121,20 +154,20 @@ pub fn execute_make_guess(
 
     let calc_hash = SenderNDay{day: current_day,msg_sender: sender};
 
-    let this_users_hash = calculate_hash( &calc_hash) as usize/3;
+    let this_users_hash = (calculate_hash( &calc_hash) as usize)%3;
     let this_users_word = today_word_list[this_users_hash].clone();
 
     let mut choice = "".to_string();
     for (i, ch) in word.chars().enumerate() {
-        let pos = this_users_word.find(ch);
-        match pos {
-            None => {
-                choice = choice.add("B");
-            }
-            Some(position) => {
-                if position == i {
-                    choice = choice.add("G");
-                } else {
+        if ch == this_users_word.chars().nth(i).unwrap_or_default() {
+            choice = choice.add("G");
+        } else {
+            let pos = this_users_word.find(ch);
+            match pos {
+                None => {
+                    choice = choice.add("B");
+                }
+                Some(..) => {
                     choice = choice.add("Y");
                 }
             }
@@ -145,7 +178,6 @@ pub fn execute_make_guess(
         DAY_AND_ADDRESS_TO_BLOCK_WON.save(deps.storage, (current_day, &info.sender), &env.block.height)?;
     }
 
-    let mut choice_store = ADDRESS_AND_DAY_TO_CHOICE.load(deps.storage, (&info.sender, current_day))?;
     choice_store.push_str(choice.as_str());
     ADDRESS_AND_DAY_TO_CHOICE.save(deps.storage, (&info.sender, current_day), &choice_store)?;
     Ok(Response::new().add_attribute("choice",choice.as_str()))
@@ -169,8 +201,6 @@ pub fn claim(
         .collect();
 
     let result_vector = blocks_and_deposits?.clone();
-    let first_block = result_vector.get(0).unwrap().0;
-    let last_block = result_vector.last().unwrap().0;
     let mut total_reward = Uint128::from(0u128);
     let mut divisor = 1;
     for ele in result_vector {

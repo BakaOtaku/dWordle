@@ -18,4 +18,7 @@ pub enum ContractError {
     #[error("Wrong guess")]
     WrongGuess {},
 
+    #[error("Game Over")]
+    GameOver {},
+
 }

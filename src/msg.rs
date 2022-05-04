@@ -1,7 +1,5 @@
-use cosmwasm_std::{Addr, Coin};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {}
@@ -12,12 +10,13 @@ pub enum ExecuteMsg {
     MakeGuess { word: String },
 
     InsertWordInDictionary { words_list: Vec<String> },
+
+    ClaimReward {day: u64}
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
-    Config {},
-    // Resolve listing returns all the details of a listing
-    ResolveListing { id: String },
+    DayQueryDeposit { day: u64 },
+    DayQueryWinnerCount {day: u64}
 }

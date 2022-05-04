@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use cosmwasm_std::{Addr, Uint128};
 use cw_storage_plus::{Item, Map};
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, Default)]
 pub struct WordDictionaryInfo {
     pub word_list: Vec<String>,
     pub word_dictionary: HashSet<String>,
@@ -20,3 +20,4 @@ pub const DEPLOYING_BLOCK_TIMESTAMP: Item<u64> = Item::new("deploying_block_time
 pub const DAY_AND_BLOCK_TO_WINNER_COUNT: Map<(u64, u64), u64> = Map::new("day_and_block_to_winner_count");
 pub const DAY_AND_ADDRESS_TO_BLOCK_WON: Map<(u64, &Addr), u64> = Map::new("day_and_address_to_block_won");
 pub const DAY_AND_BLOCK_TO_DEPOSIT: Map<(u64, u64), Uint128> = Map::new("day_and_block_to_deposit");
+pub const OWNER: Item<Addr> = Item::new("owner");
