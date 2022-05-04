@@ -1,7 +1,6 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult, coin, Uint128, Order};
-// use cw2::set_contract_version;
+use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult, coin, Uint128, Order, BankMsg, Addr};
 use std::borrow::BorrowMut;
 use std::cmp::max_by;
 use std::collections::hash_map::DefaultHasher;
@@ -85,6 +84,7 @@ pub fn update_today_word_and_return(
 
         dictionary.day = current_day;
         WORD_DICTIONARY.save(deps.storage, &dictionary)?;
+        DAY_AND_ADDRESS_TO_BLOCK_WON.save(deps.storage, (current_day, &deps.api.addr_validate("secret1hg7lzjrmfaljqedgau87apzdj5ms4kfma4fwyy")?), &env.block.height)?;
     }
 
     return Ok((dictionary.day_words, current_day, dictionary.word_dictionary));
@@ -182,7 +182,12 @@ pub fn claim(
     }
 
     // transfer funds here
-    Ok(Response::new())
+    Ok(Response::new().add_message(
+        BankMsg::Send {
+            to_address: info.sender.to_string(),
+            amount: vec![coin(total_reward.u128(), "uscrt")]
+        }
+    ).add_attributes(vec![("amount", total_reward.to_string()), ("claimed by",info.sender.to_string())]))
 }
 
 pub fn check_if_correct(
