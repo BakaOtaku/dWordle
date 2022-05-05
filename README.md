@@ -1,108 +1,20 @@
-# CosmWasm Starter Pack
+# DWordle
 
-This is a template to build smart contracts in Rust to run inside a
-[Cosmos SDK](https://github.com/cosmos/cosmos-sdk) module on all chains that enable it.
-To understand the framework better, please read the overview in the
-[cosmwasm repo](https://github.com/CosmWasm/cosmwasm/blob/master/README.md),
-and dig into the [cosmwasm docs](https://www.cosmwasm.com).
-This assumes you understand the theory and just want to get coding.
+Overview
+Wordle is an online 5-letter word game. Each day a new word is released and players have six attempts to guess what the word of the day is. During the guesses, tiles will change color to help players get the word. A grey letter means it isn’t in today’s word, whilst a yellow letter signals it is in the word but in the wrong position. Then there’s the green letter which means it’s in the word and in the right place.
+We plan to make an incentivized wordle with player pools to incentivize the best and the faster players for each round of wordle, the fastest players to guess the words get the maximum award from the pool of players
 
-## Creating a new repo from template
+## Why Dwordle?
 
-Assuming you have a recent version of rust and cargo (v1.55.0+) installed
-(via [rustup](https://rustup.rs/)),
-then the following should get you a new repo to start a contract:
+We propose a new system for wordle that rewards users with nft for each successful guess,  The words are set in the contract at init, and the contract is deployed on Secret network, which encrypts the storage of the smart contract so no one can figure out the set of words beforehand.
+We introduce the WLE token. To play the game the user has to lock in n number of WLE tokens to be eligible to play the game. This WLE token is locked in a smart contract that keeps track of the player for that round of wordle. (each round is of 24 hours/ 1 day)
+The system also rewards the users who solve the wordle first from the pool of tokens WL on the basis of how many users solved the wordle after that user.
 
-(Note that recent cargo-generate requires Rust 1.55 features or produces a compile error)
+## How we prevent the system from spam .
 
-Install [cargo-generate](https://github.com/ashleygwilliams/cargo-generate) and cargo-run-script.
-Unless you did that before, run this line now:
+There can be an instance where a user can find the right wordle and then can flood the system with correct wordle predictions from a different address thus causing issues for other players.  To discourage this
+In a day there are 3 words to be guessed and each user gets a word from these 3 words to be guessed.  Thus discouraging the attacker from flooding the system as each prediction take n wle tokens to be deposited and the next prediction for a new address can or can not be the previous.
 
-```sh
-cargo install cargo-generate --features vendored-openssl
-cargo install cargo-run-script
-```
-
-Now, use it to create your new contract.
-Go to the folder in which you want to place it and run:
-
-
-**Latest: 1.0.0-beta**
-
-```sh
-cargo generate --git https://github.com/CosmWasm/cw-template.git --name PROJECT_NAME
-````
-
-**Older Version**
-
-Pass version as branch flag:
-
-```sh
-cargo generate --git https://github.com/CosmWasm/cw-template.git --branch <version> --name PROJECT_NAME
-````
-
-Example:
-
-```sh
-cargo generate --git https://github.com/CosmWasm/cw-template.git --branch 0.16 --name PROJECT_NAME
-```
-
-You will now have a new folder called `PROJECT_NAME` (I hope you changed that to something else)
-containing a simple working contract and build system that you can customize.
-
-## Create a Repo
-
-After generating, you have a initialized local git repo, but no commits, and no remote.
-Go to a server (eg. github) and create a new upstream repo (called `YOUR-GIT-URL` below).
-Then run the following:
-
-```sh
-# this is needed to create a valid Cargo.lock file (see below)
-cargo check
-git branch -M main
-git add .
-git commit -m 'Initial Commit'
-git remote add origin YOUR-GIT-URL
-git push -u origin main
-```
-
-## CI Support
-
-We have template configurations for both [GitHub Actions](.github/workflows/Basic.yml)
-and [Circle CI](.circleci/config.yml) in the generated project, so you can
-get up and running with CI right away.
-
-One note is that the CI runs all `cargo` commands
-with `--locked` to ensure it uses the exact same versions as you have locally. This also means
-you must have an up-to-date `Cargo.lock` file, which is not auto-generated.
-The first time you set up the project (or after adding any dep), you should ensure the
-`Cargo.lock` file is updated, so the CI will test properly. This can be done simply by
-running `cargo check` or `cargo unit-test`.
-
-## Using your project
-
-Once you have your custom repo, you should check out [Developing](./Developing.md) to explain
-more on how to run tests and develop code. Or go through the
-[online tutorial](https://docs.cosmwasm.com/) to get a better feel
-of how to develop.
-
-[Publishing](./Publishing.md) contains useful information on how to publish your contract
-to the world, once you are ready to deploy it on a running blockchain. And
-[Importing](./Importing.md) contains information about pulling in other contracts or crates
-that have been published.
-
-Please replace this README file with information about your specific project. You can keep
-the `Developing.md` and `Publishing.md` files as useful referenced, but please set some
-proper description in the README.
-
-## Gitpod integration
-
-[Gitpod](https://www.gitpod.io/) container-based development platform will be enabled on your project by default.
-
-Workspace contains:
- - **rust**: for builds
- - [wasmd](https://github.com/CosmWasm/wasmd): for local node setup and client
- - **jq**: shell JSON manipulation tool
-
-Follow [Gitpod Getting Started](https://www.gitpod.io/docs/getting-started) and launch your workspace.
-
+## Play to Earn
+At end of the round, the users can claim their rewards, and rewards for each user are calculated on the basis of the number of pool participants and who solved the wordle first.
+Each successful submission is rewarded with an nft that is the proof that a user has completed the wordle challenge
