@@ -44,7 +44,7 @@ pub fn execute(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::DayQueryDeposit {day}  => query_day_data(deps, day),
         QueryMsg::DayQueryWinnerCount {day}  => query_day_winner(deps, day),
@@ -80,7 +80,7 @@ fn vec_to_set(vec: Vec<String>) -> HashSet<String> {
 }
 
 pub fn execute_insert_word_dictionary(
-    mut deps: DepsMut,
+    deps: DepsMut,
     _env: Env,
     info: MessageInfo,
     words_list: Vec<String>,
@@ -184,7 +184,7 @@ pub fn execute_make_guess(
 }
 
 pub fn claim(
-    mut deps: DepsMut,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     day_claim: u64
@@ -210,7 +210,7 @@ pub fn claim(
         divisor = DAY_AND_BLOCK_TO_WINNER_COUNT.load(deps.storage,(day_claim, ele.0)).unwrap_or(divisor);
         total_reward =  total_reward + ele.1 / Uint128::from(divisor);
     }
-
+    DAY_AND_ADDRESS_TO_BLOCK_WON.save(deps.storage, (day_claim, &info.sender), &u64::MAX)?;
     // transfer funds here
     Ok(Response::new().add_message(
         BankMsg::Send {

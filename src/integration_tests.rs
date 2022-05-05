@@ -4,7 +4,6 @@ mod tests {
     use cosmwasm_std::{coin, DepsMut};
 
     use crate::contract::{execute, instantiate};
-    use crate::error::ContractError;
     use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg };
 
     fn init_with_owner_helper(deps: DepsMut) {
